@@ -8,7 +8,7 @@ use crate::{
 };
 use eframe::egui::{
     self, Color32, CornerRadius, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, Frame,
-    Pos2, Rect, RichText, Sense, Stroke, Ui, Vec2, WidgetInfo, WidgetType,
+    Pos2, Rect, RichText, Sense, Ui, Vec2, WidgetInfo, WidgetType,
 };
 use image::imageops::{self, FilterType};
 use image::{DynamicImage, RgbaImage};
@@ -17,7 +17,8 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
 use widgets::{
-    chip_button, color_swatch, fill_segment, ghost_button, primary_button, status_chip, tip,
+    chip_button, color_swatch, fill_segment, ghost_button, primary_button, px_stroke, status_chip,
+    tip,
 };
 
 // --- palette: cool mist stage, ink, citrus accent (restrained product) ---
@@ -587,7 +588,7 @@ impl VertifyApp {
                     ui.painter().rect_stroke(
                         stage_rect.shrink(2.0),
                         CornerRadius::same(22),
-                        Stroke::new(2.0, ACCENT),
+                        px_stroke(2.0, ACCENT),
                         egui::StrokeKind::Inside,
                     );
                 }
@@ -814,7 +815,7 @@ fn draw_phone(ui: &mut Ui, phone: Rect, app: &VertifyApp, t: f32) -> egui::Respo
             painter.rect_stroke(
                 phone,
                 CornerRadius::same(22),
-                Stroke::new(1.5, ACCENT_HOVER),
+                px_stroke(1.5, ACCENT_HOVER),
                 egui::StrokeKind::Outside,
             );
         }
@@ -828,7 +829,7 @@ fn draw_phone(ui: &mut Ui, phone: Rect, app: &VertifyApp, t: f32) -> egui::Respo
             painter.rect_stroke(
                 screen.shrink(18.0),
                 CornerRadius::same(12),
-                Stroke::new(
+                px_stroke(
                     1.5,
                     if app.drag_hover || hovered {
                         Color32::from_rgb(ACCENT.r(), ACCENT.g(), ACCENT.b())
@@ -886,7 +887,7 @@ fn draw_phone(ui: &mut Ui, phone: Rect, app: &VertifyApp, t: f32) -> egui::Respo
             painter.circle_stroke(
                 screen.center(),
                 22.0,
-                Stroke::new(3.0, Color32::from_rgb(80, 96, 104)),
+                px_stroke(3.0, Color32::from_rgb(80, 96, 104)),
             );
             let a = screen.center() + Vec2::angled(spin) * 22.0;
             painter.circle_filled(a, 4.0, ACCENT);
@@ -1061,7 +1062,7 @@ fn draw_chrome_bar(ui: &mut Ui, chrome: Rect, app: &mut VertifyApp, ctx: &egui::
     painter.rect_stroke(
         chrome,
         CornerRadius::same(22),
-        Stroke::new(1.0, STROKE_SOFT),
+        px_stroke(1.0, STROKE_SOFT),
         egui::StrokeKind::Outside,
     );
 
@@ -1088,7 +1089,7 @@ fn draw_chrome_bar(ui: &mut Ui, chrome: Rect, app: &mut VertifyApp, ctx: &egui::
                         Pos2::new(div_x, chrome.center().y - 12.0),
                         Pos2::new(div_x, chrome.center().y + 12.0),
                     ],
-                    Stroke::new(1.0, STROKE_SOFT),
+                    px_stroke(1.0, STROKE_SOFT),
                 );
                 ui.add_space(12.0);
 
@@ -1163,7 +1164,7 @@ fn draw_backstage(ctx: &egui::Context, app: &mut VertifyApp) {
         .frame(
             Frame::window(&ctx.style())
                 .fill(PANEL)
-                .stroke(Stroke::new(1.0, STROKE_SOFT))
+                .stroke(px_stroke(1.0, STROKE_SOFT))
                 .corner_radius(CornerRadius::same(18))
                 .inner_margin(18.0)
                 .shadow(egui::Shadow {

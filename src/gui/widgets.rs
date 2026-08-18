@@ -4,6 +4,11 @@ use eframe::egui::{
 
 use super::{ACCENT, ACCENT_HOVER, INK, INK_MUTED, PANEL, PANEL_HOVER, STROKE_SOFT, SURFACE};
 
+/// Typed stroke width so unsuffixed floats infer as `f32` (not `f64` → `f32` fallback).
+pub(crate) fn px_stroke(width: f32, color: Color32) -> Stroke {
+    Stroke::new(width, color)
+}
+
 pub fn tip(resp: &egui::Response, text: &str) {
     resp.clone().on_hover_ui(|ui| {
         ui.set_max_width(260.0);
@@ -22,7 +27,7 @@ pub fn fill_segment(ui: &mut egui::Ui, blur_selected: bool) -> (egui::Response, 
     painter.rect_stroke(
         outer,
         CornerRadius::same(18),
-        Stroke::new(1.0, STROKE_SOFT),
+        px_stroke(1.0, STROKE_SOFT),
         egui::StrokeKind::Outside,
     );
 
@@ -92,9 +97,9 @@ pub fn ghost_button(ui: &mut egui::Ui, label: &str, tooltip: &str) -> egui::Resp
 
     let fill = if hovered { PANEL_HOVER } else { PANEL };
     let stroke = if hovered {
-        Stroke::new(1.2, ACCENT)
+        px_stroke(1.2, ACCENT)
     } else {
-        Stroke::new(1.0, STROKE_SOFT)
+        px_stroke(1.0, STROKE_SOFT)
     };
 
     let painter = ui.painter();
@@ -186,7 +191,7 @@ pub fn chip_button(
     let stroke = if selected {
         Stroke::NONE
     } else {
-        Stroke::new(1.0, STROKE_SOFT)
+        px_stroke(1.0, STROKE_SOFT)
     };
 
     let painter = ui.painter();
@@ -227,7 +232,7 @@ pub fn color_swatch(
     painter.circle_stroke(
         rect.center(),
         11.0,
-        Stroke::new(
+        px_stroke(
             if selected { 2.5 } else { 1.0 },
             if selected { ACCENT } else { STROKE_SOFT },
         ),
@@ -236,7 +241,7 @@ pub fn color_swatch(
         painter.circle_stroke(
             rect.center(),
             11.0,
-            Stroke::new(1.0, Color32::from_rgb(180, 176, 168)),
+            px_stroke(1.0, Color32::from_rgb(180, 176, 168)),
         );
     }
     tip(&resp, &format!("Bar color: {hex_or_name}"));
@@ -260,7 +265,7 @@ pub fn status_chip(ui: &mut egui::Ui, text: &str, danger: bool) -> egui::Respons
     painter.rect_stroke(
         rect,
         CornerRadius::same(14),
-        Stroke::new(
+        px_stroke(
             1.0,
             if danger {
                 Color32::from_rgb(220, 170, 170)
