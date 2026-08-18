@@ -27,7 +27,7 @@ clap = { version = "=4.4.18", features = ["derive"] }
 anyhow = "=1.0.75"
 clap_complete = "=4.4.10"
 eframe = { version = "0.31", default-features = true, features = ["default_fonts", "glow", "accesskit"] }
-egui = "0.31"
+egui = "0.36"
 rfd = "0.15"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 open = "5"
