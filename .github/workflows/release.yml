@@ -2,14 +2,39 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
+  meta:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+      slug: ${{ steps.v.outputs.slug }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          version=$(grep -m1 '^version = ' Cargo.toml | sed 's/^version = "\(.*\)"/\1/')
+          slug="${version}-${GITHUB_SHA::7}"
+          tag="v${slug}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "slug=${slug}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Publishing ${tag} from ${GITHUB_SHA}"
+
   build:
     name: build-${{ matrix.name }}
+    needs: meta
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -52,7 +77,7 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           chmod +x scripts/vendor-ffmpeg.sh
-          stage="vertify-${{ github.ref_name }}-${{ matrix.name }}"
+          stage="vertify-${{ needs.meta.outputs.tag }}-${{ matrix.name }}"
           mkdir -p "$stage"
           cp target/release/vertify "$stage/"
           cp target/release/vertify-gui "$stage/"
@@ -64,7 +89,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}".TrimStart("v")
+          $slug = "${{ needs.meta.outputs.slug }}"
+          $tag = "${{ needs.meta.outputs.tag }}"
           $payload = "installer\windows\payload"
           New-Item -ItemType Directory -Force -Path $payload | Out-Null
           Copy-Item target\release\vertify.exe $payload\
@@ -72,14 +98,14 @@ jobs:
           Copy-Item README.md, LICENSE, CHANGELOG.md, THIRD_PARTY.md $payload\
           & scripts\vendor-ffmpeg.ps1 -DestDir (Resolve-Path $payload)
 
-          $stage = "vertify-${{ github.ref_name }}-${{ matrix.name }}"
+          $stage = "vertify-$tag-${{ matrix.name }}"
           if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
           Copy-Item -Recurse $payload $stage
           Compress-Archive -Path $stage -DestinationPath "$stage.zip"
 
           choco install innosetup -y --no-progress
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          & $iscc "/DMyAppVersion=$version" installer\windows\vertify.iss
+          & $iscc "/DMyAppVersion=$slug" installer\windows\vertify.iss
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup compiler failed: $LASTEXITCODE" }
           Copy-Item installer\windows\Output\VertifySetup-*.exe .
 
@@ -96,10 +122,12 @@ jobs:
 
   publish:
     name: GitHub Release
-    needs: build
+    needs: [meta, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         with:
@@ -114,11 +142,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tag="${GITHUB_REF_NAME}"
+          tag="${{ needs.meta.outputs.tag }}"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" dist/* --clobber
           else
             gh release create "$tag" dist/* \
+              --target "$GITHUB_SHA" \
               --title "$tag" \
-              --notes-file CHANGELOG.md
+              --generate-notes \
+              --latest
           fi

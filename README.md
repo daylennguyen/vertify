@@ -58,6 +58,8 @@ You still need [ffmpeg](https://ffmpeg.org) **only if you build from source**. O
 
 ## Install
 
+Every push to `main` publishes a [GitHub Release](https://github.com/daylennguyen/vertify/releases/latest) with Windows installer, portable zip, and macOS/Linux archives (ffmpeg included).
+
 ### Windows (recommended)
 
 1. Download **`VertifySetup-*-windows-x64.exe`** from the [latest release](https://github.com/daylennguyen/vertify/releases/latest).
@@ -73,9 +75,9 @@ ffmpeg is **bundled**. You do not need `winget install ffmpeg`.
 Download the archive for your CPU from the [latest release](https://github.com/daylennguyen/vertify/releases/latest), unpack it, and run `./vertify-gui` or `./vertify`. ffmpeg is inside that folder.
 
 ```sh
-# example
-tar -xzf vertify-v0.1.1-macos-arm64.tar.gz
-cd vertify-v0.1.1-macos-arm64
+# example — the folder name includes the crate version and short commit
+tar -xzf vertify-v0.1.1-b55faf1-macos-arm64.tar.gz
+cd vertify-v0.1.1-b55faf1-macos-arm64
 ./vertify-gui
 ```
 
