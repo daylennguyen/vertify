@@ -83,12 +83,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup compiler failed: $LASTEXITCODE" }
           Copy-Item installer\windows\Output\VertifySetup-*.exe .
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vertify-${{ matrix.name }}
           path: vertify-*.${{ matrix.archive }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: runner.os == 'Windows'
         with:
           name: vertify-windows-installer
