@@ -14,7 +14,7 @@
   <a href="https://github.com/daylennguyen/vertify/releases/latest"><img src="https://img.shields.io/github/v/release/daylennguyen/vertify" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License"></a>
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-stable-orange.svg" alt="Rust"></a>
-  <a href="https://ffmpeg.org/"><img src="https://img.shields.io/badge/requires-ffmpeg-green.svg" alt="ffmpeg"></a>
+  <a href="https://ffmpeg.org/"><img src="https://img.shields.io/badge/ffmpeg-bundled-green.svg" alt="ffmpeg bundled"></a>
   <a href="https://github.com/daylennguyen/vertify/stargazers"><img src="https://img.shields.io/github/stars/daylennguyen/vertify?style=social" alt="Stars"></a>
 </p>
 
@@ -54,11 +54,36 @@ Landscape in → 9:16 out. Portrait in → 16:9 out. Or force a direction.
 | Dry-run the exact command | No | You *are* the command | `--dry-run` |
 | Desktop preview | No | No | `vertify-gui` |
 
-You still need [ffmpeg](https://ffmpeg.org) on your PATH. vertify is the opinionated wrapper: probe, pick a canvas, build the filter, encode with sensible x264 defaults, copy audio (AAC fallback).
+You still need [ffmpeg](https://ffmpeg.org) **only if you build from source**. Official installers and release zips already include `ffmpeg` and `ffprobe` next to the Vertify binaries.
 
 ## Install
 
-**Runtime dependency:** `ffmpeg` and `ffprobe` on your `PATH`.
+### Windows (recommended)
+
+1. Download **`VertifySetup-*-windows-x64.exe`** from the [latest release](https://github.com/daylennguyen/vertify/releases/latest).
+2. Run the installer. It puts Vertify in `%LOCALAPPDATA%\Programs\Vertify` (no admin prompt) together with ffmpeg.
+3. Launch **Vertify** from the Start menu, or run `vertify` in a terminal if you left PATH checked.
+
+Portable option: unzip `vertify-*-windows-x64.zip` and keep `vertify.exe`, `vertify-gui.exe`, `ffmpeg.exe`, and `ffprobe.exe` in the **same folder**. Double-click `vertify-gui.exe`. Do not scatter those files.
+
+ffmpeg is **bundled**. You do not need `winget install ffmpeg`.
+
+### macOS and Linux
+
+Download the archive for your CPU from the [latest release](https://github.com/daylennguyen/vertify/releases/latest), unpack it, and run `./vertify-gui` or `./vertify`. ffmpeg is inside that folder.
+
+```sh
+# example
+tar -xzf vertify-v0.1.1-macos-arm64.tar.gz
+cd vertify-v0.1.1-macos-arm64
+./vertify-gui
+```
+
+Move the whole folder somewhere stable (e.g. `~/Applications/vertify`) rather than copying a single binary.
+
+### From source (Rust)
+
+Building with Cargo does **not** vendor ffmpeg. Install it yourself, or point Vertify at a folder that contains `ffmpeg` / `ffprobe`:
 
 ```sh
 # macOS
@@ -67,36 +92,26 @@ brew install ffmpeg
 # Ubuntu / Debian
 sudo apt install ffmpeg
 
-# Windows (winget)
+# Windows (winget) — only needed for cargo/source builds
 winget install Gyan.FFmpeg
 ```
 
-### Prebuilt binaries
-
-Download the archive for your OS from the [latest release](https://github.com/daylennguyen/vertify/releases/latest). It contains `vertify` (CLI) and `vertify-gui` (desktop). Put them on your `PATH`.
-
-### From source (Rust)
-
 ```sh
-# Latest from GitHub
 cargo install --git https://github.com/daylennguyen/vertify --locked
-
-# Or a local clone
+# or
 git clone https://github.com/daylennguyen/vertify.git
 cd vertify
-./install.sh          # Unix: cargo install --path .
+./install.sh          # Unix
 .\install.ps1         # Windows
-# or
-cargo build --release
-# CLI: target/release/vertify
-# GUI: target/release/vertify-gui
 ```
 
-Unix prefix install (default `~/.local/bin`):
+Unix prefix install (default `~/.local/bin`) also expects ffmpeg on `PATH`:
 
 ```sh
 make install
 ```
+
+Override the search path: `VERTIFY_FFMPEG_DIR=/path/to/ffmpeg-bin vertify talk.mp4`.
 
 ### Shell completions
 
@@ -239,11 +254,14 @@ The CLI and GUI call the same `convert()` path. If you change encoding behavior,
 |---|---|
 | OS | Windows, macOS, Linux |
 | Rust | 1.80+ (to build from source) |
-| ffmpeg | 4.x or newer with `libx264`, plus `ffprobe` |
+| ffmpeg | Bundled in official releases. Source builds need ffmpeg 4.x+ with `libx264` on `PATH` (or `VERTIFY_FFMPEG_DIR`). |
 
 Hardware acceleration is not used. That keeps the filter graph portable. For huge batches, prefer `--fast` or a lower `--size`.
 
 ## FAQ
+
+**Do I need to install ffmpeg?**
+Not if you use the Windows installer or an official release zip/tarball. ffmpeg ships in the same folder. Source/`cargo install` builds still need ffmpeg on `PATH`.
 
 **Does it crop?**
 No. The source is scaled with `force_original_aspect_ratio=decrease` and centered.
@@ -270,4 +288,4 @@ Bug reports and ideas: [open an issue](https://github.com/daylennguyen/vertify/i
 
 [MIT](LICENSE) © Daylen Nguyen
 
-Bundled GUI fonts (Syne, Source Sans 3) are SIL OFL 1.1 — see [assets/fonts](assets/fonts/README.md). ffmpeg is not bundled.
+Bundled GUI fonts (Syne, Source Sans 3) are SIL OFL 1.1 — see [assets/fonts](assets/fonts/README.md). Official releases bundle FFmpeg as a separate GPL program — see [THIRD_PARTY.md](THIRD_PARTY.md).

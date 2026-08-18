@@ -1,4 +1,5 @@
 # One-shot installer for vertify on Windows. Safe to re-run after source changes.
+# End users: download VertifySetup from GitHub Releases instead — it includes ffmpeg.
 $ErrorActionPreference = "Stop"
 
 if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {

@@ -1,5 +1,6 @@
 #!/usr/bin/env sh
-# One-shot installer for vertify. Safe to re-run after source changes.
+# One-shot source installer for vertify. Safe to re-run after source changes.
+# End users: prefer a GitHub Release archive — those include ffmpeg.
 set -e
 
 if ! command -v cargo >/dev/null 2>&1; then

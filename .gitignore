@@ -6,3 +6,5 @@
 *.pdb
 **/tests/snapshots/**/*.diff.png
 **/tests/snapshots/**/*.new.png
+installer/windows/payload/
+installer/windows/Output/

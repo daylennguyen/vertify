@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 
 pub mod gui;
 
@@ -89,8 +90,8 @@ pub struct Plan {
 }
 
 pub fn ensure_tools() -> Result<()> {
-    ensure_tool("ffmpeg")?;
-    ensure_tool("ffprobe")?;
+    let _ = ffmpeg_bin()?;
+    let _ = ffprobe_bin()?;
     Ok(())
 }
 
@@ -196,11 +197,11 @@ pub fn build_plan(opts: &ConvertOptions, probe: &ProbeInfo) -> Result<Plan> {
     })
 }
 
-pub fn render_command(opts: &ConvertOptions, plan: &Plan) -> String {
+pub fn render_command(opts: &ConvertOptions, plan: &Plan) -> Result<String> {
     let preset = if opts.fast { "ultrafast" } else { "veryfast" };
-    let mut cmd = base_command(opts, &plan.filter, preset);
+    let mut cmd = base_command(opts, &plan.filter, preset)?;
     cmd.args(["-c:a", "copy"]).arg(&plan.output);
-    render(&cmd)
+    Ok(render(&cmd))
 }
 
 pub fn convert(opts: &ConvertOptions) -> Result<PathBuf> {
@@ -233,17 +234,17 @@ pub fn convert(opts: &ConvertOptions) -> Result<PathBuf> {
     }
 
     if opts.dry_run {
-        println!("{}", render_command(opts, &plan));
+        println!("{}", render_command(opts, &plan)?);
         return Ok(plan.output);
     }
 
     let preset = if opts.fast { "ultrafast" } else { "veryfast" };
-    let mut cmd = base_command(opts, &plan.filter, preset);
+    let mut cmd = base_command(opts, &plan.filter, preset)?;
     cmd.args(["-c:a", "copy"]).arg(&plan.output);
 
     let status = cmd.status().context("failed to launch ffmpeg")?;
     if !status.success() {
-        let mut retry = base_command(opts, &plan.filter, preset);
+        let mut retry = base_command(opts, &plan.filter, preset)?;
         retry
             .args(["-c:a", "aac", "-b:a", "192k"])
             .arg("-y")
@@ -259,8 +260,8 @@ pub fn convert(opts: &ConvertOptions) -> Result<PathBuf> {
 
 /// Extract a single preview frame (PNG bytes) for the Flip Stage.
 pub fn extract_preview_png(input: &Path, at_secs: f64) -> Result<Vec<u8>> {
-    ensure_tool("ffmpeg")?;
-    let out = Command::new("ffmpeg")
+    let ffmpeg = ffmpeg_bin()?;
+    let out = Command::new(&ffmpeg)
         .args([
             "-hide_banner",
             "-loglevel",
@@ -278,7 +279,7 @@ pub fn extract_preview_png(input: &Path, at_secs: f64) -> Result<Vec<u8>> {
 
     if !out.status.success() || out.stdout.is_empty() {
         // Retry from the start if the seek overshot.
-        let out = Command::new("ffmpeg")
+        let out = Command::new(&ffmpeg)
             .args(["-hide_banner", "-loglevel", "error", "-i"])
             .arg(input)
             .args(["-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "-"])
@@ -320,7 +321,7 @@ pub fn parse_fill_color(name_or_hex: &str) -> [u8; 3] {
 }
 
 fn probe_dimensions(path: &Path) -> Result<(u32, u32)> {
-    let out = Command::new("ffprobe")
+    let out = Command::new(ffprobe_bin()?)
         .args([
             "-v",
             "error",
@@ -351,7 +352,7 @@ fn probe_dimensions(path: &Path) -> Result<(u32, u32)> {
 }
 
 fn probe_duration(path: &Path) -> Result<f64> {
-    let out = Command::new("ffprobe")
+    let out = Command::new(ffprobe_bin()?)
         .args([
             "-v",
             "error",
@@ -372,20 +373,77 @@ fn probe_duration(path: &Path) -> Result<f64> {
         .context("could not parse duration")
 }
 
-fn ensure_tool(name: &str) -> Result<()> {
-    let ok = Command::new(name)
-        .arg("-version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    if !ok {
-        bail!("{name} not found on PATH — install ffmpeg from https://ffmpeg.org and retry");
-    }
-    Ok(())
+fn ffmpeg_bin() -> Result<PathBuf> {
+    cached_tool(&FFMPEG, "ffmpeg")
 }
 
-fn base_command(opts: &ConvertOptions, filter: &str, preset: &str) -> Command {
-    let mut cmd = Command::new("ffmpeg");
+fn ffprobe_bin() -> Result<PathBuf> {
+    cached_tool(&FFPROBE, "ffprobe")
+}
+
+static FFMPEG: OnceLock<PathBuf> = OnceLock::new();
+static FFPROBE: OnceLock<PathBuf> = OnceLock::new();
+
+fn cached_tool(slot: &OnceLock<PathBuf>, name: &str) -> Result<PathBuf> {
+    if let Some(p) = slot.get() {
+        return Ok(p.clone());
+    }
+    let resolved = resolve_tool(name)?;
+    Ok(slot.get_or_init(|| resolved).clone())
+}
+
+fn exe_name(name: &str) -> String {
+    if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_string()
+    }
+}
+
+/// Places vertify looks for `ffmpeg` / `ffprobe`, in order:
+/// `VERTIFY_FFMPEG_DIR`, next to this executable (release bundle / installer),
+/// `./ffmpeg/` and `./bin/` beside the executable, then PATH.
+pub fn tool_candidates(name: &str) -> Vec<PathBuf> {
+    let filename = exe_name(name);
+    let mut out = Vec::new();
+    if let Ok(dir) = std::env::var("VERTIFY_FFMPEG_DIR") {
+        out.push(PathBuf::from(dir).join(&filename));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            out.push(dir.join(&filename));
+            out.push(dir.join("ffmpeg").join(&filename));
+            out.push(dir.join("bin").join(&filename));
+        }
+    }
+    out.push(PathBuf::from(filename));
+    out
+}
+
+fn tool_runs(path: &Path) -> bool {
+    Command::new(path)
+        .arg("-version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn resolve_tool(name: &str) -> Result<PathBuf> {
+    for candidate in tool_candidates(name) {
+        if tool_runs(&candidate) {
+            return Ok(candidate);
+        }
+    }
+    bail!(
+        "{name} not found. Official releases bundle ffmpeg next to vertify — keep those files together. \
+         Developers: install ffmpeg (https://ffmpeg.org) or set VERTIFY_FFMPEG_DIR."
+    )
+}
+
+fn base_command(opts: &ConvertOptions, filter: &str, preset: &str) -> Result<Command> {
+    let mut cmd = Command::new(ffmpeg_bin()?);
     cmd.arg(if opts.overwrite { "-y" } else { "-n" })
         .args(["-hide_banner", "-loglevel", "warning", "-stats"])
         .arg("-i")
@@ -395,7 +453,7 @@ fn base_command(opts: &ConvertOptions, filter: &str, preset: &str) -> Command {
         .args(["-preset", preset])
         .args(["-crf", &opts.crf.to_string()])
         .args(["-movflags", "+faststart"]);
-    cmd
+    Ok(cmd)
 }
 
 fn render(cmd: &Command) -> String {
@@ -518,5 +576,27 @@ mod tests {
             duration_secs: 1.0,
         };
         assert!(build_plan(&opts, &probe).is_err());
+    }
+
+    #[test]
+    fn tool_candidates_include_executable_dir() {
+        let candidates = tool_candidates("ffmpeg");
+        let exe_dir = std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        assert!(
+            candidates
+                .iter()
+                .any(|p| p.parent() == Some(exe_dir.as_path())),
+            "expected a candidate next to the running binary, got {candidates:?}"
+        );
+        let expected_name = exe_name("ffmpeg");
+        assert!(candidates.iter().all(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n == expected_name)
+        }));
     }
 }
