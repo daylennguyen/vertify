@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: ffmpeg / ffprobe missing
+    url: https://ffmpeg.org/download.html
+    about: vertify requires ffmpeg and ffprobe on your PATH. This is not a vertify bug.
+  - name: Security report
+    url: https://github.com/daylennguyen/vertify/security/advisories/new
+    about: Privately report a vulnerability instead of opening a public issue.

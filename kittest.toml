@@ -1,0 +1,16 @@
+# egui_kittest snapshot settings
+output_path = "tests/snapshots"
+threshold = 0.55
+failed_pixel_count_threshold = 20
+
+[windows]
+threshold = 0.6
+failed_pixel_count_threshold = 30
+
+[macos]
+threshold = 0.55
+failed_pixel_count_threshold = 20
+
+[linux]
+threshold = 0.55
+failed_pixel_count_threshold = 20

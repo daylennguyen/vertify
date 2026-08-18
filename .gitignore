@@ -1,0 +1,8 @@
+/target
+**/*.rs.bk
+.cursor/
+.idea/
+.vscode/
+*.pdb
+**/tests/snapshots/**/*.diff.png
+**/tests/snapshots/**/*.new.png

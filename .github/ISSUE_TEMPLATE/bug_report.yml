@@ -1,0 +1,67 @@
+name: Bug report
+description: Something is broken in the CLI or GUI
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Search existing issues first.
+
+  - type: input
+    id: version
+    attributes:
+      label: vertify version
+      placeholder: "vertify --version"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where did it happen?
+      options:
+        - CLI (`vertify`)
+        - GUI (`vertify-gui`)
+        - Both / unsure
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "Windows 11 / macOS 15 / Ubuntu 24.04"
+    validations:
+      required: true
+
+  - type: input
+    id: ffmpeg
+    attributes:
+      label: ffmpeg version
+      placeholder: "ffmpeg -version | head -1"
+    validations:
+      required: false
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Command or steps
+      description: Exact CLI invocation, or GUI clicks/keys.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual
+    validations:
+      required: true

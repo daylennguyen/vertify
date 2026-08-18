@@ -1,0 +1,40 @@
+[package]
+name = "vertify"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+authors = ["Daylen Nguyen <https://github.com/daylennguyen>"]
+description = "Convert 16:9 ↔ 9:16 video without cropping (blurred or solid letterbox padding)"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/daylennguyen/vertify"
+homepage = "https://github.com/daylennguyen/vertify"
+documentation = "https://github.com/daylennguyen/vertify#readme"
+keywords = ["video", "ffmpeg", "cli", "aspect-ratio", "letterbox"]
+categories = ["command-line-utilities", "multimedia"]
+exclude = [".cursor/", "target/", "tests/snapshots/*.diff.png", "tests/snapshots/*.new.png"]
+
+[[bin]]
+name = "vertify"
+path = "src/main.rs"
+
+[[bin]]
+name = "vertify-gui"
+path = "src/bin/gui.rs"
+
+[dependencies]
+clap = { version = "=4.4.18", features = ["derive"] }
+anyhow = "=1.0.75"
+clap_complete = "=4.4.10"
+eframe = { version = "0.31", default-features = true, features = ["default_fonts", "glow", "accesskit"] }
+egui = "0.31"
+rfd = "0.15"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+open = "5"
+
+[dev-dependencies]
+egui_kittest = { version = "0.31", features = ["wgpu", "snapshot", "eframe"] }
+
+[profile.release]
+lto = true
+strip = true

@@ -1,0 +1,50 @@
+#compdef vertify
+
+autoload -U is-at-least
+
+_vertify() {
+    typeset -A opt_args
+    typeset -a _arguments_options
+    local ret=1
+
+    if is-at-least 5.2; then
+        _arguments_options=(-s -S -C)
+    else
+        _arguments_options=(-s -C)
+    fi
+
+    local context curcontext="$curcontext" state line
+    _arguments "${_arguments_options[@]}" \
+'--completions=[Generate shell completions and exit (bash, zsh, fish, powershell, elvish)]:SHELL:(bash elvish fish powershell zsh)' \
+'-t+[Target aspect ratio (auto = flip the input'\''s orientation)]:TO:(auto 9:16 16:9)' \
+'--to=[Target aspect ratio (auto = flip the input'\''s orientation)]:TO:(auto 9:16 16:9)' \
+'-f+[How to fill the empty space around the video]:FILL:(blur color)' \
+'--fill=[How to fill the empty space around the video]:FILL:(blur color)' \
+'--size=[Length of the output'\''s long edge in pixels (1920 = 1080p-class)]:SIZE: ' \
+'--color=[Solid fill color (only used with --fill color), e.g. black, white, #101010]:COLOR: ' \
+'--blur=[Blur strength (only used with --fill blur)]:BLUR: ' \
+'--crf=[x264 CRF quality (lower = better, 18-28 is sane)]:CRF: ' \
+'--fast[Encode as fast as possible (larger file, lower quality-per-bit)]' \
+'-y[Overwrite the output file if it exists]' \
+'--overwrite[Overwrite the output file if it exists]' \
+'--dry-run[Print the ffmpeg command instead of running it]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'::input -- Input video file:_files' \
+'::output -- Output video file (defaults to "<input>_vertical.mp4" or "<input>_horizontal.mp4"):_files' \
+&& ret=0
+}
+
+(( $+functions[_vertify_commands] )) ||
+_vertify_commands() {
+    local commands; commands=()
+    _describe -t commands 'vertify commands' commands "$@"
+}
+
+if [ "$funcstack[1]" = "_vertify" ]; then
+    _vertify "$@"
+else
+    compdef _vertify vertify
+fi
