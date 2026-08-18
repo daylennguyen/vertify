@@ -24,7 +24,7 @@ jobs:
       tag: ${{ steps.v.outputs.tag }}
       slug: ${{ steps.v.outputs.slug }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: v
         run: |
           version=$(grep -m1 '^version = ' Cargo.toml | sed 's/^version = "\(.*\)"/\1/')
@@ -53,7 +53,7 @@ jobs:
             name: macos-arm64
             archive: tar.gz
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -126,7 +126,7 @@ jobs:
     if: github.repository_owner == 'daylennguyen' && success()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
