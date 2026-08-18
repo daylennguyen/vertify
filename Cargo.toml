@@ -13,6 +13,7 @@ documentation = "https://github.com/daylennguyen/vertify#readme"
 keywords = ["video", "ffmpeg", "cli", "aspect-ratio", "letterbox"]
 categories = ["command-line-utilities", "multimedia"]
 exclude = [".cursor/", "target/", "tests/snapshots/*.diff.png", "tests/snapshots/*.new.png"]
+default-run = "vertify"
 
 [[bin]]
 name = "vertify"

@@ -46,4 +46,4 @@ jobs:
         run: cargo test --lib --bins --locked
 
       - name: CLI help
-        run: cargo run --quiet --locked -- --help
+        run: cargo run --quiet --locked --bin vertify -- --help
