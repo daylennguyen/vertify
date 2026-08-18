@@ -180,6 +180,10 @@ A small desktop app for people who want to *see* the letterbox before committing
 cargo run --release --bin vertify-gui
 ```
 
+<p align="center">
+  <img src="tests/snapshots/ready_blur.png" alt="Flip Stage preview with blurred letterbox bars" width="720">
+</p>
+
 - Drop a clip onto the phone frame, or click / press `O` to open.
 - The stage shows a letterboxed preview (blur or solid fill).
 - Click the frame (or `Enter` / `Space`) to export.
