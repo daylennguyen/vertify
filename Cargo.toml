@@ -2,7 +2,7 @@
 name = "vertify"
 version = "0.1.1"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.85"
 authors = ["Daylen Nguyen <https://github.com/daylennguyen>"]
 description = "Convert 16:9 ↔ 9:16 video without cropping (blurred or solid letterbox padding)"
 license = "MIT"
@@ -24,9 +24,9 @@ name = "vertify-gui"
 path = "src/bin/gui.rs"
 
 [dependencies]
-clap = { version = "=4.4.18", features = ["derive"] }
-anyhow = "=1.0.75"
-clap_complete = "=4.4.10"
+clap = { version = "=4.6.6", features = ["derive"] }
+anyhow = "=1.0.104"
+clap_complete = "=4.5.3"
 eframe = { version = "0.31", default-features = true, features = ["default_fonts", "glow", "accesskit"] }
 egui = "0.31"
 rfd = "0.15"
