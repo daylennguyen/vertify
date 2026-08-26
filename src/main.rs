@@ -3,16 +3,12 @@ use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{generate, Shell};
 use std::io;
 use std::path::PathBuf;
-<<<<<<< HEAD
 use vertify::update::{
     current_version, download_and_replace, fetch_latest_release, is_newer, select_asset,
 };
-use vertify::{convert, ConvertOptions, Fill, Target};
-=======
 use vertify::{
     build_plan, convert, probe, render_json_plan, AudioMode, ConvertOptions, Fill, LogLevel, Target,
 };
->>>>>>> origin/main
 
 /// Convert video between 16:9 and 9:16 without cropping any of the frame.
 ///
@@ -87,24 +83,9 @@ struct Args {
     #[arg(long)]
     dry_run: bool,
 
-<<<<<<< HEAD
     #[command(subcommand)]
     command: Option<Commands>,
-}
 
-#[derive(Subcommand, Debug)]
-enum Commands {
-    /// Check for and apply the latest vertify release
-    ///
-    /// Downloads the release archive for the current platform, extracts the
-    /// vertify binary, and replaces the running executable.  Pass --check to
-    /// only print whether an update is available without downloading.
-    Update {
-        /// Only check whether an update is available; do not download or replace
-        #[arg(long)]
-        check: bool,
-    },
-=======
     /// Extra ffmpeg argument (repeatable)
     #[arg(long = "ffmpeg-arg")]
     ffmpeg_arg: Vec<String>,
@@ -144,7 +125,20 @@ enum Commands {
     /// Open output file after successful encode
     #[arg(long)]
     open: bool,
->>>>>>> origin/main
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Check for and apply the latest vertify release
+    ///
+    /// Downloads the release archive for the current platform, extracts the
+    /// vertify binary, and replaces the running executable.  Pass --check to
+    /// only print whether an update is available without downloading.
+    Update {
+        /// Only check whether an update is available; do not download or replace
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, ValueEnum)]

@@ -3,15 +3,10 @@
 mod widgets;
 
 use crate::{
-<<<<<<< HEAD
-    build_plan, convert, ensure_tools, extract_preview_png, parse_fill_color, probe,
-    update::{current_version, download_and_replace, fetch_latest_release, is_newer, select_asset},
-    ConvertOptions, Fill, Orientation, ProbeInfo, Target,
-=======
     build_plan, convert, ensure_tools, extract_preview_png, is_valid_fill_color, parse_fill_color,
-    probe, render_command, AudioMode, ConvertOptions, Fill, LogLevel, Orientation, ProbeInfo,
-    Target,
->>>>>>> origin/main
+    probe, render_command,
+    update::{current_version, download_and_replace, fetch_latest_release, is_newer, select_asset},
+    AudioMode, ConvertOptions, Fill, LogLevel, Orientation, ProbeInfo, Target,
 };
 use eframe::egui::{
     self, Color32, CornerRadius, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, Frame,
@@ -165,23 +160,17 @@ pub struct VertifyApp {
     tools_ok: Result<(), String>,
     hover_phone: bool,
     drag_hover: bool,
-<<<<<<< HEAD
     pub update_state: UpdateState,
     update_rx: Option<Receiver<UpdateMsg>>,
-=======
     last_saved_settings: String,
->>>>>>> origin/main
 }
 
 impl VertifyApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         install_fonts(&cc.egui_ctx);
         let mut app = Self::with_tools(ensure_tools().map_err(|e| e.to_string()));
-<<<<<<< HEAD
         app.start_update_check();
-=======
         app.load_saved_settings();
->>>>>>> origin/main
         app
     }
 
@@ -226,12 +215,9 @@ impl VertifyApp {
             tools_ok,
             hover_phone: false,
             drag_hover: false,
-<<<<<<< HEAD
             update_state: UpdateState::Unchecked,
             update_rx: None,
-=======
             last_saved_settings: settings_key(&GuiPrefs::default()),
->>>>>>> origin/main
         }
     }
 
@@ -1667,7 +1653,6 @@ fn section(ui: &mut Ui, title: &str) {
     ui.label(RichText::new(title).strong().size(13.0).color(INK));
 }
 
-<<<<<<< HEAD
 /// Draw the update banner at the very top of `full` and return its height.
 ///
 /// Returns `0.0` when no banner is needed (no message worth showing).
@@ -1737,7 +1722,8 @@ fn draw_update_banner(ui: &mut Ui, full: Rect, app: &mut VertifyApp, ctx: &egui:
     );
 
     banner_h
-=======
+}
+
 fn settings_key(prefs: &GuiPrefs) -> String {
     format!(
         "to={:?};fill={:?};size={};color={};blur={};crf={};fast={};overwrite={};dry_run={}",
@@ -1836,7 +1822,6 @@ fn load_gui_prefs() -> Option<GuiPrefs> {
         }
     }
     Some(prefs)
->>>>>>> origin/main
 }
 
 fn make_blur_bg(src: &RgbaImage, radius: u32) -> RgbaImage {
