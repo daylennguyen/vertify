@@ -7,8 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- GitHub Releases are published automatically on every push to `main`
-- Releases are published only for `daylennguyen/vertify` (not a GoDaddy identity)
+### Added
+
+- `vertify update` CLI subcommand — checks for a newer GitHub release and replaces the running binary (`--check` for a read-only check)
+- GUI update banner — the Flip Stage checks for updates on startup and shows a click-to-update strip when a new version is available
 
 ## [0.1.1] — 2026-08-18
 

@@ -237,6 +237,25 @@ $env:UPDATE_SNAPSHOTS="1"; cargo test --test gui_visual -- --test-threads=1
 
 vertify does **not** link against ffmpeg. It is a MIT-licensed Rust frontend. ffmpeg is a separate install with its own license (LGPL/GPL depending on the build).
 
+## Updating
+
+### CLI
+
+```sh
+vertify update           # check and install the latest release
+vertify update --check   # check only, no download
+```
+
+vertify downloads the release archive for your platform, extracts the binary, and atomically replaces the running executable. After a successful update, restart the terminal session or run `vertify --version` to confirm.
+
+### GUI (Flip Stage)
+
+The GUI checks for a new release in the background each time it starts. When a newer version is found, a narrow banner appears at the top of the window. Click it to download and install. Restart Vertify after the banner reports success.
+
+### Manual
+
+Download the latest archive from the [releases page](https://github.com/daylennguyen/vertify/releases), extract it, and replace your existing binaries.
+
 ## Project layout
 
 ```

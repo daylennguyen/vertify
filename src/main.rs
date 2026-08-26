@@ -1,8 +1,11 @@
 use anyhow::{bail, Result};
-use clap::{CommandFactory, Parser, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{generate, Shell};
 use std::io;
 use std::path::PathBuf;
+use vertify::update::{
+    current_version, download_and_replace, fetch_latest_release, is_newer, select_asset,
+};
 use vertify::{convert, ConvertOptions, Fill, Target};
 
 /// Convert video between 16:9 and 9:16 without cropping any of the frame.
@@ -17,11 +20,10 @@ use vertify::{convert, ConvertOptions, Fill, Target};
     version,
     about = "Convert 16:9 ↔ 9:16 video without cropping",
     arg_required_else_help = true,
-    after_help = "Examples:\n  vertify talk.mp4\n  vertify talk.mp4 --to 9:16 --fill blur\n  vertify talk.mp4 --fill color --color '#101010'\n  vertify talk.mp4 --dry-run\n  vertify --completions bash > vertify.bash"
+    after_help = "Examples:\n  vertify talk.mp4\n  vertify talk.mp4 --to 9:16 --fill blur\n  vertify talk.mp4 --fill color --color '#101010'\n  vertify talk.mp4 --dry-run\n  vertify update\n  vertify --completions bash > vertify.bash"
 )]
 struct Args {
     /// Input video file
-    #[arg(required_unless_present = "completions")]
     input: Option<PathBuf>,
 
     /// Output video file (defaults to "<input>_vertical.mp4" or "<input>_horizontal.mp4")
@@ -66,6 +68,23 @@ struct Args {
     /// Print the ffmpeg command instead of running it
     #[arg(long)]
     dry_run: bool,
+
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Check for and apply the latest vertify release
+    ///
+    /// Downloads the release archive for the current platform, extracts the
+    /// vertify binary, and replaces the running executable.  Pass --check to
+    /// only print whether an update is available without downloading.
+    Update {
+        /// Only check whether an update is available; do not download or replace
+        #[arg(long)]
+        check: bool,
+    },
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, ValueEnum)]
@@ -85,6 +104,11 @@ enum CliFill {
 
 fn main() -> Result<()> {
     let args = Args::parse();
+
+    // Subcommands are handled before anything else.
+    if let Some(Commands::Update { check }) = args.command {
+        return run_update(check);
+    }
 
     if let Some(shell) = args.completions {
         generate(shell, &mut Args::command(), "vertify", &mut io::stdout());
@@ -120,5 +144,51 @@ fn main() -> Result<()> {
     if !opts.dry_run {
         eprintln!("Done: {}", output.display());
     }
+    Ok(())
+}
+
+fn run_update(check_only: bool) -> Result<()> {
+    eprintln!("Checking for updates…");
+
+    let info = fetch_latest_release()?;
+
+    if !is_newer(&info.version, current_version()) {
+        eprintln!("vertify {} is already up to date.", current_version());
+        return Ok(());
+    }
+
+    eprintln!(
+        "vertify {} is available (current: {}).",
+        info.version,
+        current_version()
+    );
+
+    if check_only {
+        eprintln!("Run `vertify update` (without --check) to install it.");
+        return Ok(());
+    }
+
+    let asset = select_asset(&info.assets).ok_or_else(|| {
+        anyhow::anyhow!(
+            "no release asset found for this platform — download manually from \
+             https://github.com/daylennguyen/vertify/releases"
+        )
+    })?;
+
+    // Interactive prompt.
+    eprint!("Download and install {}? [y/N] ", asset.name);
+    let mut answer = String::new();
+    std::io::stdin().read_line(&mut answer)?;
+    if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+        eprintln!("Update cancelled.");
+        return Ok(());
+    }
+
+    eprintln!("Downloading {}…", asset.name);
+    download_and_replace(asset)?;
+    eprintln!(
+        "Updated to vertify {}. Restart vertify to apply.",
+        info.version
+    );
     Ok(())
 }

@@ -4,6 +4,7 @@ use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 
 pub mod gui;
+pub mod update;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Target {
