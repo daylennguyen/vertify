@@ -592,6 +592,7 @@ impl VertifyApp {
 
     /// Main UI — shared by eframe and visual harnesses.
     pub fn ui(&mut self, ctx: &egui::Context) {
+        let backstage_was_open = self.backstage_open;
         self.poll_worker(ctx);
 
         if !self.headless {
@@ -747,13 +748,19 @@ impl VertifyApp {
                     draw_shortcuts(ctx, self);
                 }
             });
-        self.persist_settings_if_changed();
+        if backstage_was_open && !self.backstage_open {
+            self.persist_settings_if_changed();
+        }
     }
 }
 
 impl eframe::App for VertifyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.ui(ctx);
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.persist_settings_if_changed();
     }
 }
 

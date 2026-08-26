@@ -303,6 +303,14 @@ pub fn convert(opts: &ConvertOptions) -> Result<PathBuf> {
         return Ok(plan.output);
     }
 
+    if let Some(parent) = plan.output.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!("failed to create output directory: {}", parent.display())
+            })?;
+        }
+    }
+
     let preset = selected_preset(opts);
     let mut cmd = base_command(opts, &plan.filter, preset)?;
     push_audio_args(&mut cmd, opts, opts.audio_mode);
