@@ -7,10 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<<<<<<< HEAD
 ### Added
 
 - `vertify update` CLI subcommand — checks for a newer GitHub release and replaces the running binary (`--check` for a read-only check)
 - GUI update banner — the Flip Stage checks for updates on startup and shows a click-to-update strip when a new version is available
+=======
+- GitHub Releases are published automatically on every push to `main`
+- Releases are published only for `daylennguyen/vertify` (not a GoDaddy identity)
+- CLI: added `--ffmpeg-arg` passthrough, `--preset`, `--output-dir`, `--suffix`, `--audio-mode`, `--audio-bitrate`, `--map-metadata`, `--start`, `--duration`, `--loglevel`, `--no-faststart`, `--json-plan`, and `--open`
+- GUI: added dry-run command copy action, open output folder action, custom long-edge input, richer color presets with inline color validation, reset defaults, target swap, keyboard shortcut help panel, and local persistence for last-used settings
+>>>>>>> origin/main
 
 ## [0.1.1] — 2026-08-18
 
