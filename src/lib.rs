@@ -18,19 +18,56 @@ pub enum Fill {
     Color,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum AudioMode {
+    Copy,
+    Aac,
+    None,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum LogLevel {
+    Quiet,
+    Error,
+    Warning,
+    Info,
+}
+
+impl LogLevel {
+    fn as_ffmpeg(self) -> &'static str {
+        match self {
+            Self::Quiet => "quiet",
+            Self::Error => "error",
+            Self::Warning => "warning",
+            Self::Info => "info",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ConvertOptions {
     pub input: PathBuf,
     pub output: Option<PathBuf>,
+    pub output_dir: Option<PathBuf>,
+    pub suffix: Option<String>,
     pub to: Target,
     pub fill: Fill,
     pub size: u32,
     pub color: String,
     pub blur: u32,
     pub fast: bool,
+    pub preset: Option<String>,
     pub crf: u32,
     pub overwrite: bool,
     pub dry_run: bool,
+    pub ffmpeg_args: Vec<String>,
+    pub audio_mode: AudioMode,
+    pub audio_bitrate: String,
+    pub map_metadata: bool,
+    pub start: Option<String>,
+    pub duration: Option<String>,
+    pub loglevel: LogLevel,
+    pub no_faststart: bool,
 }
 
 impl Default for ConvertOptions {
@@ -38,15 +75,26 @@ impl Default for ConvertOptions {
         Self {
             input: PathBuf::new(),
             output: None,
+            output_dir: None,
+            suffix: None,
             to: Target::Auto,
             fill: Fill::Blur,
             size: 1920,
             color: "black".into(),
             blur: 40,
             fast: false,
+            preset: None,
             crf: 21,
             overwrite: false,
             dry_run: false,
+            ffmpeg_args: Vec::new(),
+            audio_mode: AudioMode::Copy,
+            audio_bitrate: "192k".into(),
+            map_metadata: false,
+            start: None,
+            duration: None,
+            loglevel: LogLevel::Warning,
+            no_faststart: false,
         }
     }
 }
@@ -124,16 +172,28 @@ pub fn resolve_target(to: Target, probe: &ProbeInfo) -> Result<Target> {
     }
 }
 
-pub fn default_output(input: &Path, target: Target) -> PathBuf {
+pub fn default_output(
+    input: &Path,
+    target: Target,
+    output_dir: Option<&Path>,
+    suffix: Option<&str>,
+) -> PathBuf {
     let stem = input
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "output".into());
-    let suffix = match target {
+    let orientation_suffix = match target {
         Target::Vertical => "vertical",
         _ => "horizontal",
     };
-    input.with_file_name(format!("{stem}_{suffix}.mp4"))
+    let extra = suffix.filter(|s| !s.trim().is_empty());
+    let file_name = match extra {
+        Some(extra) => format!("{stem}_{orientation_suffix}_{extra}.mp4"),
+        None => format!("{stem}_{orientation_suffix}.mp4"),
+    };
+    output_dir
+        .map(|dir| dir.join(&file_name))
+        .unwrap_or_else(|| input.with_file_name(file_name))
 }
 
 pub fn canvas_size(size: u32, target: Target) -> (u32, u32) {
@@ -156,10 +216,14 @@ pub fn build_plan(opts: &ConvertOptions, probe: &ProbeInfo) -> Result<Plan> {
         Target::Auto => unreachable!(),
     };
 
-    let output = opts
-        .output
-        .clone()
-        .unwrap_or_else(|| default_output(&opts.input, target));
+    let output = opts.output.clone().unwrap_or_else(|| {
+        default_output(
+            &opts.input,
+            target,
+            opts.output_dir.as_deref(),
+            opts.suffix.as_deref(),
+        )
+    });
 
     if output == opts.input {
         bail!("output path must differ from input path");
@@ -198,9 +262,10 @@ pub fn build_plan(opts: &ConvertOptions, probe: &ProbeInfo) -> Result<Plan> {
 }
 
 pub fn render_command(opts: &ConvertOptions, plan: &Plan) -> Result<String> {
-    let preset = if opts.fast { "ultrafast" } else { "veryfast" };
+    let preset = selected_preset(opts);
     let mut cmd = base_command(opts, &plan.filter, preset)?;
-    cmd.args(["-c:a", "copy"]).arg(&plan.output);
+    push_audio_args(&mut cmd, opts, opts.audio_mode);
+    cmd.arg(&plan.output);
     Ok(render(&cmd))
 }
 
@@ -238,19 +303,22 @@ pub fn convert(opts: &ConvertOptions) -> Result<PathBuf> {
         return Ok(plan.output);
     }
 
-    let preset = if opts.fast { "ultrafast" } else { "veryfast" };
+    let preset = selected_preset(opts);
     let mut cmd = base_command(opts, &plan.filter, preset)?;
-    cmd.args(["-c:a", "copy"]).arg(&plan.output);
+    push_audio_args(&mut cmd, opts, opts.audio_mode);
+    cmd.arg(&plan.output);
 
     let status = cmd.status().context("failed to launch ffmpeg")?;
     if !status.success() {
-        let mut retry = base_command(opts, &plan.filter, preset)?;
-        retry
-            .args(["-c:a", "aac", "-b:a", "192k"])
-            .arg("-y")
-            .arg(&plan.output);
-        let status = retry.status().context("failed to launch ffmpeg")?;
-        if !status.success() {
+        if opts.audio_mode == AudioMode::Copy {
+            let mut retry = base_command(opts, &plan.filter, preset)?;
+            push_audio_args(&mut retry, opts, AudioMode::Aac);
+            retry.arg("-y").arg(&plan.output);
+            let status = retry.status().context("failed to launch ffmpeg")?;
+            if !status.success() {
+                bail!("ffmpeg exited with {status}");
+            }
+        } else {
             bail!("ffmpeg exited with {status}");
         }
     }
@@ -295,15 +363,23 @@ pub fn extract_preview_png(input: &Path, at_secs: f64) -> Result<Vec<u8>> {
     Ok(out.stdout)
 }
 
+pub fn is_valid_fill_color(name_or_hex: &str) -> bool {
+    parse_fill_color_impl(name_or_hex).is_some()
+}
+
 pub fn parse_fill_color(name_or_hex: &str) -> [u8; 3] {
+    parse_fill_color_impl(name_or_hex).unwrap_or([0, 0, 0])
+}
+
+fn parse_fill_color_impl(name_or_hex: &str) -> Option<[u8; 3]> {
     let s = name_or_hex.trim().to_ascii_lowercase();
     match s.as_str() {
-        "black" => [0, 0, 0],
-        "white" => [255, 255, 255],
-        "red" => [255, 0, 0],
-        "green" => [0, 128, 0],
-        "blue" => [0, 0, 255],
-        "gray" | "grey" => [128, 128, 128],
+        "black" => Some([0, 0, 0]),
+        "white" => Some([255, 255, 255]),
+        "red" => Some([255, 0, 0]),
+        "green" => Some([0, 128, 0]),
+        "blue" => Some([0, 0, 255]),
+        "gray" | "grey" => Some([128, 128, 128]),
         _ => {
             let hex = s.trim_start_matches('#');
             if hex.len() == 6 {
@@ -312,10 +388,10 @@ pub fn parse_fill_color(name_or_hex: &str) -> [u8; 3] {
                     u8::from_str_radix(&hex[2..4], 16),
                     u8::from_str_radix(&hex[4..6], 16),
                 ) {
-                    return [r, g, b];
+                    return Some([r, g, b]);
                 }
             }
-            [0, 0, 0]
+            None
         }
     }
 }
@@ -444,16 +520,82 @@ fn resolve_tool(name: &str) -> Result<PathBuf> {
 
 fn base_command(opts: &ConvertOptions, filter: &str, preset: &str) -> Result<Command> {
     let mut cmd = Command::new(ffmpeg_bin()?);
+    if let Some(start) = opts.start.as_deref() {
+        cmd.args(["-ss", start]);
+    }
+    if let Some(duration) = opts.duration.as_deref() {
+        cmd.args(["-t", duration]);
+    }
     cmd.arg(if opts.overwrite { "-y" } else { "-n" })
-        .args(["-hide_banner", "-loglevel", "warning", "-stats"])
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            opts.loglevel.as_ffmpeg(),
+            "-stats",
+        ])
         .arg("-i")
         .arg(&opts.input)
         .args(["-vf", filter])
         .args(["-c:v", "libx264"])
         .args(["-preset", preset])
-        .args(["-crf", &opts.crf.to_string()])
-        .args(["-movflags", "+faststart"]);
+        .args(["-crf", &opts.crf.to_string()]);
+    if opts.map_metadata {
+        cmd.args(["-map_metadata", "0"]);
+    }
+    if !opts.no_faststart {
+        cmd.args(["-movflags", "+faststart"]);
+    }
+    if !opts.ffmpeg_args.is_empty() {
+        cmd.args(&opts.ffmpeg_args);
+    }
     Ok(cmd)
+}
+
+fn selected_preset(opts: &ConvertOptions) -> &str {
+    if let Some(preset) = opts.preset.as_deref() {
+        return preset;
+    }
+    if opts.fast {
+        "ultrafast"
+    } else {
+        "veryfast"
+    }
+}
+
+fn push_audio_args(cmd: &mut Command, opts: &ConvertOptions, mode: AudioMode) {
+    match mode {
+        AudioMode::Copy => {
+            cmd.args(["-c:a", "copy"]);
+        }
+        AudioMode::Aac => {
+            cmd.args(["-c:a", "aac", "-b:a", opts.audio_bitrate.as_str()]);
+        }
+        AudioMode::None => {
+            cmd.arg("-an");
+        }
+    }
+}
+
+pub fn render_json_plan(plan: &Plan, fill: Fill) -> String {
+    let target = match plan.target {
+        Target::Vertical => "9:16",
+        Target::Horizontal => "16:9",
+        Target::Auto => "auto",
+    };
+    let fill = match fill {
+        Fill::Blur => "blur",
+        Fill::Color => "color",
+    };
+    format!(
+        "{{\"target\":\"{target}\",\"output_width\":{},\"output_height\":{},\"output_path\":\"{}\",\"fill\":\"{fill}\"}}",
+        plan.out_w,
+        plan.out_h,
+        json_escape(&plan.output.to_string_lossy())
+    )
+}
+
+fn json_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 fn render(cmd: &Command) -> String {
@@ -529,12 +671,25 @@ mod tests {
     #[test]
     fn default_output_uses_orientation_suffix() {
         assert_eq!(
-            default_output(Path::new("clip.mov"), Target::Vertical),
+            default_output(Path::new("clip.mov"), Target::Vertical, None, None),
             PathBuf::from("clip_vertical.mp4")
         );
         assert_eq!(
-            default_output(Path::new("clip.mov"), Target::Horizontal),
+            default_output(Path::new("clip.mov"), Target::Horizontal, None, None),
             PathBuf::from("clip_horizontal.mp4")
+        );
+    }
+
+    #[test]
+    fn default_output_supports_output_dir_and_custom_suffix() {
+        assert_eq!(
+            default_output(
+                Path::new("/tmp/in/clip.mov"),
+                Target::Vertical,
+                Some(Path::new("/tmp/out")),
+                Some("social")
+            ),
+            PathBuf::from("/tmp/out/clip_vertical_social.mp4")
         );
     }
 
@@ -543,6 +698,8 @@ mod tests {
         assert_eq!(parse_fill_color("white"), [255, 255, 255]);
         assert_eq!(parse_fill_color("#101010"), [16, 16, 16]);
         assert_eq!(parse_fill_color("nope"), [0, 0, 0]);
+        assert!(is_valid_fill_color("gray"));
+        assert!(!is_valid_fill_color("not-a-color"));
     }
 
     #[test]

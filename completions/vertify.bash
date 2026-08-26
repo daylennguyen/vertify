@@ -19,12 +19,20 @@ _vertify() {
 
     case "${cmd}" in
         vertify)
-            opts="-t -f -y -h -V --completions --to --fill --size --color --blur --fast --crf --overwrite --dry-run --help --version [INPUT] [OUTPUT]"
+            opts="-t -f -y -h -V --output-dir --suffix --completions --to --fill --size --color --blur --fast --preset --crf --overwrite --dry-run --ffmpeg-arg --audio-mode --audio-bitrate --map-metadata --start --duration --json-plan --loglevel --no-faststart --open --help --version [INPUT] [OUTPUT]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --output-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --suffix)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --completions)
                     COMPREPLY=($(compgen -W "bash elvish fish powershell zsh" -- "${cur}"))
                     return 0
@@ -57,8 +65,36 @@ _vertify() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --preset)
+                    COMPREPLY=($(compgen -W "ultrafast superfast veryfast faster fast medium slow slower veryslow placebo" -- "${cur}"))
+                    return 0
+                    ;;
                 --crf)
                     COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ffmpeg-arg)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --audio-mode)
+                    COMPREPLY=($(compgen -W "copy aac none" -- "${cur}"))
+                    return 0
+                    ;;
+                --audio-bitrate)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --start)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --duration)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --loglevel)
+                    COMPREPLY=($(compgen -W "quiet error warning info" -- "${cur}"))
                     return 0
                     ;;
                 *)
