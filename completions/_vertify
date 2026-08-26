@@ -15,6 +15,8 @@ _vertify() {
 
     local context curcontext="$curcontext" state line
     _arguments "${_arguments_options[@]}" \
+'--output-dir=[Output directory used when OUTPUT is omitted]:OUTPUT_DIR:_files' \
+'--suffix=[Extra suffix for auto-generated output filenames]:SUFFIX: ' \
 '--completions=[Generate shell completions and exit (bash, zsh, fish, powershell, elvish)]:SHELL:(bash elvish fish powershell zsh)' \
 '-t+[Target aspect ratio (auto = flip the input'\''s orientation)]:TO:(auto 9:16 16:9)' \
 '--to=[Target aspect ratio (auto = flip the input'\''s orientation)]:TO:(auto 9:16 16:9)' \
@@ -23,11 +25,22 @@ _vertify() {
 '--size=[Length of the output'\''s long edge in pixels (1920 = 1080p-class)]:SIZE: ' \
 '--color=[Solid fill color (only used with --fill color), e.g. black, white, #101010]:COLOR: ' \
 '--blur=[Blur strength (only used with --fill blur)]:BLUR: ' \
+'--preset=[x264 preset (overrides --fast), e.g. veryfast, medium, slow]:PRESET:(ultrafast superfast veryfast faster fast medium slow slower veryslow placebo)' \
 '--crf=[x264 CRF quality (lower = better, 18-28 is sane)]:CRF: ' \
+'*--ffmpeg-arg=[Extra ffmpeg argument (repeatable)]:FFMPEG_ARG: ' \
+'--audio-mode=[Audio handling mode]:AUDIO_MODE:(copy aac none)' \
+'--audio-bitrate=[AAC bitrate used by --audio-mode aac (and copy fallback), e.g. 192k]:AUDIO_BITRATE: ' \
+'--start=[Input seek time (ffmpeg format), e.g. 00\:00\:03.5]:START: ' \
+'--duration=[Output duration (ffmpeg format), e.g. 12 or 00\:00\:12]:DURATION: ' \
+'--loglevel=[ffmpeg log level]:LOGLEVEL:(quiet error warning info)' \
 '--fast[Encode as fast as possible (larger file, lower quality-per-bit)]' \
 '-y[Overwrite the output file if it exists]' \
 '--overwrite[Overwrite the output file if it exists]' \
 '--dry-run[Print the ffmpeg command instead of running it]' \
+'--map-metadata[Copy source metadata to the output]' \
+'--json-plan[Print conversion plan as JSON and exit]' \
+'--no-faststart[Disable +faststart on output MP4]' \
+'--open[Open output file after successful encode]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
 '-V[Print version]' \

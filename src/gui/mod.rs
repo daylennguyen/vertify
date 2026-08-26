@@ -3,8 +3,9 @@
 mod widgets;
 
 use crate::{
-    build_plan, convert, ensure_tools, extract_preview_png, parse_fill_color, probe,
-    ConvertOptions, Fill, Orientation, ProbeInfo, Target,
+    build_plan, convert, ensure_tools, extract_preview_png, is_valid_fill_color, parse_fill_color,
+    probe, render_command, AudioMode, ConvertOptions, Fill, LogLevel, Orientation, ProbeInfo,
+    Target,
 };
 use eframe::egui::{
     self, Color32, CornerRadius, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, Frame,
@@ -12,6 +13,7 @@ use eframe::egui::{
 };
 use image::imageops::{self, FilterType};
 use image::{DynamicImage, RgbaImage};
+use std::fs;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
@@ -67,6 +69,35 @@ enum WorkerMsg {
     Failed(String),
 }
 
+#[derive(Clone, Debug)]
+struct GuiPrefs {
+    to: Target,
+    fill: Fill,
+    size: u32,
+    color: String,
+    blur: u32,
+    crf: u32,
+    fast: bool,
+    overwrite: bool,
+    dry_run: bool,
+}
+
+impl Default for GuiPrefs {
+    fn default() -> Self {
+        Self {
+            to: Target::Auto,
+            fill: Fill::Blur,
+            size: 1920,
+            color: "black".into(),
+            blur: 40,
+            crf: 21,
+            fast: false,
+            overwrite: false,
+            dry_run: false,
+        }
+    }
+}
+
 /// Flip Stage application state.
 pub struct VertifyApp {
     pub phase: Phase,
@@ -83,8 +114,10 @@ pub struct VertifyApp {
     pub overwrite: bool,
     pub dry_run: bool,
     pub backstage_open: bool,
+    pub shortcuts_open: bool,
     pub error: Option<String>,
     pub output: Option<PathBuf>,
+    pub custom_size_input: String,
     rx: Option<Receiver<WorkerMsg>>,
     started: Instant,
     /// When set, drives animations instead of wall clock (snapshot determinism).
@@ -94,12 +127,15 @@ pub struct VertifyApp {
     tools_ok: Result<(), String>,
     hover_phone: bool,
     drag_hover: bool,
+    last_saved_settings: String,
 }
 
 impl VertifyApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         install_fonts(&cc.egui_ctx);
-        Self::with_tools(ensure_tools().map_err(|e| e.to_string()))
+        let mut app = Self::with_tools(ensure_tools().map_err(|e| e.to_string()));
+        app.load_saved_settings();
+        app
     }
 
     /// Deterministic app for visual tests (no ffmpeg required for idle/backstage).
@@ -132,8 +168,10 @@ impl VertifyApp {
             overwrite: false,
             dry_run: false,
             backstage_open: false,
+            shortcuts_open: false,
             error,
             output: None,
+            custom_size_input: "1920".into(),
             rx: None,
             started: Instant::now(),
             frozen_time: None,
@@ -141,6 +179,7 @@ impl VertifyApp {
             tools_ok,
             hover_phone: false,
             drag_hover: false,
+            last_saved_settings: settings_key(&GuiPrefs::default()),
         }
     }
 
@@ -170,19 +209,90 @@ impl VertifyApp {
         self.error = None;
     }
 
+    fn reset_backstage_defaults(&mut self) {
+        let defaults = GuiPrefs::default();
+        self.to = defaults.to;
+        self.fill = defaults.fill;
+        self.size = defaults.size;
+        self.color = defaults.color;
+        self.blur = defaults.blur;
+        self.crf = defaults.crf;
+        self.fast = defaults.fast;
+        self.overwrite = defaults.overwrite;
+        self.dry_run = defaults.dry_run;
+        self.custom_size_input = self.size.to_string();
+    }
+
+    fn swap_target(&mut self) {
+        self.to = match self.to {
+            Target::Vertical => Target::Horizontal,
+            Target::Horizontal => Target::Vertical,
+            Target::Auto => Target::Vertical,
+        };
+    }
+
+    fn load_saved_settings(&mut self) {
+        if let Some(prefs) = load_gui_prefs() {
+            self.to = prefs.to;
+            self.fill = prefs.fill;
+            self.size = prefs.size;
+            self.color = prefs.color.clone();
+            self.blur = prefs.blur;
+            self.crf = prefs.crf;
+            self.fast = prefs.fast;
+            self.overwrite = prefs.overwrite;
+            self.dry_run = prefs.dry_run;
+            self.custom_size_input = self.size.to_string();
+            self.last_saved_settings = settings_key(&prefs);
+        }
+    }
+
+    fn persist_settings_if_changed(&mut self) {
+        if self.headless {
+            return;
+        }
+        let prefs = GuiPrefs {
+            to: self.to,
+            fill: self.fill,
+            size: self.size,
+            color: self.color.clone(),
+            blur: self.blur,
+            crf: self.crf,
+            fast: self.fast,
+            overwrite: self.overwrite,
+            dry_run: self.dry_run,
+        };
+        let key = settings_key(&prefs);
+        if key != self.last_saved_settings {
+            let _ = save_gui_prefs(&prefs);
+            self.last_saved_settings = key;
+        }
+    }
+
     fn options(&self) -> Option<ConvertOptions> {
         Some(ConvertOptions {
             input: self.input.clone()?,
             output: None,
+            output_dir: None,
+            suffix: None,
             to: self.to,
             fill: self.fill,
             size: self.size,
             color: self.color.clone(),
             blur: self.blur,
             fast: self.fast,
+            preset: None,
             crf: self.crf,
             overwrite: self.overwrite,
             dry_run: self.dry_run,
+            ffmpeg_args: Vec::new(),
+            audio_mode: AudioMode::Copy,
+            audio_bitrate: "192k".into(),
+            map_metadata: false,
+            start: None,
+            duration: None,
+            loglevel: LogLevel::Warning,
+            no_faststart: false,
         })
     }
 
@@ -202,6 +312,13 @@ impl VertifyApp {
         )
         .ok()
         .map(|p| p.target)
+    }
+
+    fn current_command(&self) -> Option<String> {
+        let opts = self.options()?;
+        let probe = self.probe.as_ref()?;
+        let plan = build_plan(&opts, probe).ok()?;
+        render_command(&opts, &plan).ok()
     }
 
     pub fn whisper(&self) -> String {
@@ -475,6 +592,7 @@ impl VertifyApp {
 
     /// Main UI — shared by eframe and visual harnesses.
     pub fn ui(&mut self, ctx: &egui::Context) {
+        let backstage_was_open = self.backstage_open;
         self.poll_worker(ctx);
 
         if !self.headless {
@@ -508,8 +626,14 @@ impl VertifyApp {
         if ctx.input(|i| i.key_pressed(egui::Key::Comma)) {
             self.backstage_open = !self.backstage_open;
         }
+        if ctx.input(|i| i.key_pressed(egui::Key::Slash) && i.modifiers.shift) {
+            self.shortcuts_open = !self.shortcuts_open;
+        }
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && self.backstage_open {
             self.backstage_open = false;
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && self.shortcuts_open {
+            self.shortcuts_open = false;
         }
 
         let t = self.clock(ctx);
@@ -620,13 +744,23 @@ impl VertifyApp {
                 if self.backstage_open {
                     draw_backstage(ctx, self);
                 }
+                if self.shortcuts_open {
+                    draw_shortcuts(ctx, self);
+                }
             });
+        if backstage_was_open && !self.backstage_open {
+            self.persist_settings_if_changed();
+        }
     }
 }
 
 impl eframe::App for VertifyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.ui(ctx);
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.persist_settings_if_changed();
     }
 }
 
@@ -1114,11 +1248,35 @@ fn draw_chrome_bar(ui: &mut Ui, chrome: Rect, app: &mut VertifyApp, ctx: &egui::
                     {
                         app.begin_export(ctx);
                     }
+                    Phase::Ready => {
+                        if app.dry_run
+                            && ghost_button(
+                                ui,
+                                "Copy command",
+                                "Copy the current ffmpeg dry-run command",
+                            )
+                            .clicked()
+                        {
+                            if let Some(cmd) = app.current_command() {
+                                ui.ctx().copy_text(cmd);
+                            }
+                        }
+                    }
                     Phase::Done => {
                         if primary_button(ui, "Reveal", "Open the exported file").clicked() {
                             if let Some(p) = &app.output {
                                 if !app.headless {
                                     let _ = open::that(p);
+                                }
+                            }
+                        }
+                        if ghost_button(ui, "Open folder", "Open the exported file folder").clicked()
+                        {
+                            if let Some(p) = &app.output {
+                                if !app.headless {
+                                    if let Some(parent) = p.parent() {
+                                        let _ = open::that(parent);
+                                    }
                                 }
                             }
                         }
@@ -1214,6 +1372,15 @@ fn draw_backstage(ctx: &egui::Context, app: &mut VertifyApp) {
                         app.error = None;
                     }
                 }
+                if ghost_button(
+                    ui,
+                    "Swap",
+                    "Swap between 9:16 and 16:9 quickly (Auto -> 9:16)",
+                )
+                .clicked()
+                {
+                    app.swap_target();
+                }
             });
 
             ui.add_space(12.0);
@@ -1228,7 +1395,25 @@ fn draw_backstage(ctx: &egui::Context, app: &mut VertifyApp) {
                 ] {
                     if chip_button(ui, &format!("{s}"), app.size == s, tip_text).clicked() {
                         app.size = s;
+                        app.custom_size_input = s.to_string();
                     }
+                }
+            });
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Custom").size(12.0).color(INK_MUTED));
+                let r = ui.text_edit_singleline(&mut app.custom_size_input);
+                tip(&r, "Custom long edge in pixels (even, >= 240)");
+                let parsed = app.custom_size_input.trim().parse::<u32>().ok();
+                let valid = parsed.is_some_and(|v| v >= 240);
+                if valid && ghost_button(ui, "Apply", "Use custom long-edge size").clicked() {
+                    if let Some(v) = parsed {
+                        app.size = v & !1;
+                        app.custom_size_input = app.size.to_string();
+                    }
+                }
+                if !valid && !app.custom_size_input.trim().is_empty() {
+                    ui.colored_label(DANGER, "invalid size");
                 }
             });
 
@@ -1247,8 +1432,14 @@ fn draw_backstage(ctx: &egui::Context, app: &mut VertifyApp) {
                     for (name, rgb) in [
                         ("black", [0_u8, 0, 0]),
                         ("white", [255, 255, 255]),
+                        ("red", [255, 0, 0]),
+                        ("green", [0, 128, 0]),
+                        ("blue", [0, 0, 255]),
+                        ("gray", [128, 128, 128]),
                         ("#101010", [16, 16, 16]),
                         ("#e8eef0", [232, 238, 240]),
+                        ("#f4d35e", [244, 211, 94]),
+                        ("#457b9d", [69, 123, 157]),
                     ] {
                         if color_swatch(ui, name, rgb, app.color == name).clicked() {
                             app.color = name.into();
@@ -1258,6 +1449,12 @@ fn draw_backstage(ctx: &egui::Context, app: &mut VertifyApp) {
                 ui.add_space(6.0);
                 let r = ui.text_edit_singleline(&mut app.color);
                 tip(&r, "CSS name or hex, e.g. black, white, #101010");
+                if !is_valid_fill_color(&app.color) {
+                    ui.colored_label(
+                        DANGER,
+                        "Invalid color for preview. Use black/white/red/green/blue/gray or #RRGGBB.",
+                    );
+                }
             }
 
             ui.add_space(12.0);
@@ -1278,6 +1475,12 @@ fn draw_backstage(ctx: &egui::Context, app: &mut VertifyApp) {
             tip(&r, "Print the ffmpeg command instead of encoding");
 
             ui.add_space(14.0);
+            if ghost_button(ui, "Reset defaults", "Reset backstage options to defaults").clicked() {
+                app.reset_backstage_defaults();
+            }
+            if ghost_button(ui, "Shortcuts (?)", "Show keyboard shortcuts").clicked() {
+                app.shortcuts_open = true;
+            }
             if ghost_button(ui, "Close backstage", "Hide these settings (Esc or ,)").clicked() {
                 app.backstage_open = false;
             }
@@ -1289,8 +1492,142 @@ fn draw_backstage(ctx: &egui::Context, app: &mut VertifyApp) {
         });
 }
 
+fn draw_shortcuts(ctx: &egui::Context, app: &mut VertifyApp) {
+    egui::Window::new("Keyboard shortcuts")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .frame(
+            Frame::window(&ctx.style())
+                .fill(PANEL)
+                .stroke(px_stroke(1.0, STROKE_SOFT))
+                .corner_radius(CornerRadius::same(18))
+                .inner_margin(18.0),
+        )
+        .show(ctx, |ui| {
+            ui.set_width(380.0);
+            for (key, desc) in [
+                ("O", "Open video file"),
+                ("Enter / Space", "Export with current options"),
+                (",", "Toggle Backstage settings"),
+                ("Shift+?", "Toggle this shortcuts panel"),
+                ("Esc", "Close Backstage or shortcuts panel"),
+            ] {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(key).strong().color(INK));
+                    ui.label(RichText::new(desc).color(INK_MUTED));
+                });
+                ui.add_space(4.0);
+            }
+            ui.add_space(8.0);
+            if ghost_button(ui, "Close", "Close shortcuts panel (Esc)").clicked() {
+                app.shortcuts_open = false;
+            }
+        });
+}
+
 fn section(ui: &mut Ui, title: &str) {
     ui.label(RichText::new(title).strong().size(13.0).color(INK));
+}
+
+fn settings_key(prefs: &GuiPrefs) -> String {
+    format!(
+        "to={:?};fill={:?};size={};color={};blur={};crf={};fast={};overwrite={};dry_run={}",
+        prefs.to,
+        prefs.fill,
+        prefs.size,
+        prefs.color,
+        prefs.blur,
+        prefs.crf,
+        prefs.fast,
+        prefs.overwrite,
+        prefs.dry_run
+    )
+}
+
+fn prefs_file_path() -> Option<PathBuf> {
+    if cfg!(windows) {
+        let base = std::env::var_os("APPDATA").map(PathBuf::from)?;
+        return Some(base.join("Vertify").join("gui_prefs.conf"));
+    }
+    let home = std::env::var_os("HOME").map(PathBuf::from)?;
+    Some(home.join(".config").join("vertify").join("gui_prefs.conf"))
+}
+
+fn save_gui_prefs(prefs: &GuiPrefs) -> std::io::Result<()> {
+    let Some(path) = prefs_file_path() else {
+        return Ok(());
+    };
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let text = format!(
+        "to={}\nfill={}\nsize={}\ncolor={}\nblur={}\ncrf={}\nfast={}\noverwrite={}\ndry_run={}\n",
+        match prefs.to {
+            Target::Auto => "auto",
+            Target::Vertical => "vertical",
+            Target::Horizontal => "horizontal",
+        },
+        match prefs.fill {
+            Fill::Blur => "blur",
+            Fill::Color => "color",
+        },
+        prefs.size,
+        prefs.color,
+        prefs.blur,
+        prefs.crf,
+        prefs.fast,
+        prefs.overwrite,
+        prefs.dry_run
+    );
+    fs::write(path, text)
+}
+
+fn load_gui_prefs() -> Option<GuiPrefs> {
+    let path = prefs_file_path()?;
+    let text = fs::read_to_string(path).ok()?;
+    let mut prefs = GuiPrefs::default();
+    for line in text.lines() {
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
+        match k.trim() {
+            "to" => {
+                prefs.to = match v.trim() {
+                    "vertical" => Target::Vertical,
+                    "horizontal" => Target::Horizontal,
+                    _ => Target::Auto,
+                }
+            }
+            "fill" => {
+                prefs.fill = match v.trim() {
+                    "color" => Fill::Color,
+                    _ => Fill::Blur,
+                }
+            }
+            "size" => {
+                if let Ok(size) = v.trim().parse() {
+                    prefs.size = size;
+                }
+            }
+            "color" => prefs.color = v.trim().to_string(),
+            "blur" => {
+                if let Ok(blur) = v.trim().parse() {
+                    prefs.blur = blur;
+                }
+            }
+            "crf" => {
+                if let Ok(crf) = v.trim().parse() {
+                    prefs.crf = crf;
+                }
+            }
+            "fast" => prefs.fast = v.trim() == "true",
+            "overwrite" => prefs.overwrite = v.trim() == "true",
+            "dry_run" => prefs.dry_run = v.trim() == "true",
+            _ => {}
+        }
+    }
+    Some(prefs)
 }
 
 fn make_blur_bg(src: &RgbaImage, radius: u32) -> RgbaImage {
