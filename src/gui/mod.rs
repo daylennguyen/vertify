@@ -4,8 +4,9 @@ mod widgets;
 
 use crate::{
     build_plan, convert, ensure_tools, extract_preview_png, is_valid_fill_color, parse_fill_color,
-    probe, render_command, AudioMode, ConvertOptions, Fill, LogLevel, Orientation, ProbeInfo,
-    Target,
+    probe, render_command,
+    update::{current_version, download_and_replace, fetch_latest_release, is_newer, select_asset},
+    AudioMode, ConvertOptions, Fill, LogLevel, Orientation, ProbeInfo, Target,
 };
 use eframe::egui::{
     self, Color32, CornerRadius, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, Frame,
@@ -22,6 +23,38 @@ use widgets::{
     chip_button, color_swatch, fill_segment, ghost_button, primary_button, px_stroke, status_chip,
     tip,
 };
+
+// ── Update state ─────────────────────────────────────────────────────────────
+
+/// Lifecycle of a background update check / apply operation.
+#[derive(Clone, Debug, PartialEq)]
+pub enum UpdateState {
+    /// No check has started (headless / test builds skip this entirely).
+    Unchecked,
+    /// Check is in flight.
+    Checking,
+    /// A newer release is available; value is the new version string.
+    Available(String),
+    /// Already on the latest version.
+    UpToDate,
+    /// Update check failed — message shown in the banner.
+    CheckFailed(String),
+    /// Download + replace is in progress.
+    Updating,
+    /// Update applied successfully — restart the app to use it.
+    UpdateDone(String),
+    /// Apply failed — message shown in the banner.
+    UpdateFailed(String),
+}
+
+/// Messages from update background threads to the GUI event loop.
+enum UpdateMsg {
+    Available(String),
+    UpToDate,
+    CheckFailed(String),
+    ApplyDone(String),
+    ApplyFailed(String),
+}
 
 // --- palette: cool mist stage, ink, citrus accent (restrained product) ---
 pub const BG_TOP: Color32 = Color32::from_rgb(198, 214, 220);
@@ -127,6 +160,8 @@ pub struct VertifyApp {
     tools_ok: Result<(), String>,
     hover_phone: bool,
     drag_hover: bool,
+    pub update_state: UpdateState,
+    update_rx: Option<Receiver<UpdateMsg>>,
     last_saved_settings: String,
 }
 
@@ -134,6 +169,7 @@ impl VertifyApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         install_fonts(&cc.egui_ctx);
         let mut app = Self::with_tools(ensure_tools().map_err(|e| e.to_string()));
+        app.start_update_check();
         app.load_saved_settings();
         app
     }
@@ -179,8 +215,91 @@ impl VertifyApp {
             tools_ok,
             hover_phone: false,
             drag_hover: false,
+            update_state: UpdateState::Unchecked,
+            update_rx: None,
             last_saved_settings: settings_key(&GuiPrefs::default()),
         }
+    }
+
+    /// Spawn a background thread that checks for a newer release. Called only
+    /// in the real (non-headless) GUI path so tests are unaffected.
+    fn start_update_check(&mut self) {
+        let (tx, rx) = mpsc::channel();
+        self.update_state = UpdateState::Checking;
+        self.update_rx = Some(rx);
+        thread::spawn(move || {
+            let msg = match fetch_latest_release() {
+                Err(e) => UpdateMsg::CheckFailed(e.to_string()),
+                Ok(info) => {
+                    if is_newer(&info.version, current_version()) {
+                        UpdateMsg::Available(info.version)
+                    } else {
+                        UpdateMsg::UpToDate
+                    }
+                }
+            };
+            let _ = tx.send(msg);
+        });
+    }
+
+    /// Poll the update check / apply receiver and advance `update_state`.
+    fn poll_update(&mut self, ctx: &egui::Context) {
+        let Some(rx) = &self.update_rx else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(UpdateMsg::Available(v)) => {
+                self.update_state = UpdateState::Available(v);
+                self.update_rx = None;
+                ctx.request_repaint();
+            }
+            Ok(UpdateMsg::UpToDate) => {
+                self.update_state = UpdateState::UpToDate;
+                self.update_rx = None;
+            }
+            Ok(UpdateMsg::CheckFailed(msg)) => {
+                self.update_state = UpdateState::CheckFailed(msg);
+                self.update_rx = None;
+            }
+            Ok(UpdateMsg::ApplyDone(v)) => {
+                self.update_state = UpdateState::UpdateDone(v);
+                self.update_rx = None;
+                ctx.request_repaint();
+            }
+            Ok(UpdateMsg::ApplyFailed(msg)) => {
+                self.update_state = UpdateState::UpdateFailed(msg);
+                self.update_rx = None;
+                ctx.request_repaint();
+            }
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => {
+                self.update_rx = None;
+            }
+        }
+    }
+
+    /// Start downloading + applying an update for the given `version` release.
+    /// Only called after `UpdateState::Available` has been reached.
+    fn begin_apply_update(&mut self, version: String, ctx: &egui::Context) {
+        let (tx, rx) = mpsc::channel();
+        self.update_state = UpdateState::Updating;
+        self.update_rx = Some(rx);
+        ctx.request_repaint();
+        thread::spawn(move || {
+            let msg = match fetch_latest_release() {
+                Err(e) => UpdateMsg::ApplyFailed(e.to_string()),
+                Ok(info) => match select_asset(&info.assets) {
+                    None => {
+                        UpdateMsg::ApplyFailed("No release asset found for this platform.".into())
+                    }
+                    Some(asset) => match download_and_replace(asset) {
+                        Ok(()) => UpdateMsg::ApplyDone(version),
+                        Err(e) => UpdateMsg::ApplyFailed(e.to_string()),
+                    },
+                },
+            };
+            let _ = tx.send(msg);
+        });
     }
 
     pub fn clock(&self, _ctx: &egui::Context) -> f32 {
@@ -594,6 +713,7 @@ impl VertifyApp {
     pub fn ui(&mut self, ctx: &egui::Context) {
         let backstage_was_open = self.backstage_open;
         self.poll_worker(ctx);
+        self.poll_update(ctx);
 
         if !self.headless {
             let dropped: Vec<_> = ctx.input(|i| i.raw.dropped_files.clone());
@@ -650,10 +770,13 @@ impl VertifyApp {
                 paint_atmosphere(ui, t, self.frozen_time.is_some());
                 let full = ui.max_rect();
 
-                // Top brand block
+                // Update banner — narrow strip at the very top of the stage.
+                let banner_h = draw_update_banner(ui, full, self, ctx);
+
+                // Top brand block (shifted down if a banner is visible)
                 ui.allocate_new_ui(
                     egui::UiBuilder::new().max_rect(Rect::from_min_size(
-                        full.min + Vec2::new(0.0, 20.0),
+                        full.min + Vec2::new(0.0, banner_h + 20.0),
                         Vec2::new(full.width(), 96.0),
                     )),
                     |ui| {
@@ -674,7 +797,7 @@ impl VertifyApp {
                 draw_chrome_bar(ui, chrome, self, ctx);
 
                 // Stage between header and chrome
-                let stage_top = full.top() + 120.0;
+                let stage_top = full.top() + banner_h + 120.0;
                 let stage_bottom = chrome.top() - 12.0;
                 let stage_rect = Rect::from_min_max(
                     Pos2::new(full.center().x - 430.0, stage_top),
@@ -1528,6 +1651,77 @@ fn draw_shortcuts(ctx: &egui::Context, app: &mut VertifyApp) {
 
 fn section(ui: &mut Ui, title: &str) {
     ui.label(RichText::new(title).strong().size(13.0).color(INK));
+}
+
+/// Draw the update banner at the very top of `full` and return its height.
+///
+/// Returns `0.0` when no banner is needed (no message worth showing).
+fn draw_update_banner(ui: &mut Ui, full: Rect, app: &mut VertifyApp, ctx: &egui::Context) -> f32 {
+    let banner_h = 30.0;
+    let banner_rect = Rect::from_min_size(full.min, Vec2::new(full.width(), banner_h));
+
+    let (bg, text_color, msg, clickable, dismissible) = match &app.update_state {
+        UpdateState::Available(v) => (
+            ACCENT,
+            Color32::WHITE,
+            format!("vertify {} available — click to update", v),
+            true,
+            false,
+        ),
+        UpdateState::Updating => (
+            ACCENT,
+            Color32::WHITE,
+            "Updating… please wait".into(),
+            false,
+            false,
+        ),
+        UpdateState::UpdateDone(v) => (
+            OK,
+            Color32::WHITE,
+            format!("Updated to {} — restart vertify to apply  ✕", v),
+            false,
+            true,
+        ),
+        UpdateState::UpdateFailed(msg) => (
+            DANGER,
+            Color32::WHITE,
+            format!("Update failed: {}  ✕", msg),
+            false,
+            true,
+        ),
+        // All other states: no banner.
+        _ => return 0.0,
+    };
+
+    // Paint background.
+    ui.painter()
+        .rect_filled(banner_rect, CornerRadius::ZERO, bg);
+
+    // Clickable or dismiss logic.
+    let resp = ui.interact(banner_rect, ui.id().with("update_banner"), Sense::click());
+    if resp.hovered() && (clickable || dismissible) {
+        ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+    }
+    if resp.clicked() {
+        if clickable {
+            if let UpdateState::Available(v) = app.update_state.clone() {
+                app.begin_apply_update(v, ctx);
+            }
+        } else if dismissible {
+            app.update_state = UpdateState::UpToDate;
+        }
+    }
+
+    // Centered label.
+    ui.painter().text(
+        banner_rect.center(),
+        egui::Align2::CENTER_CENTER,
+        &msg,
+        FontId::proportional(13.0),
+        text_color,
+    );
+
+    banner_h
 }
 
 fn settings_key(prefs: &GuiPrefs) -> String {
