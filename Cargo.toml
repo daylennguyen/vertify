@@ -26,7 +26,7 @@ path = "src/bin/gui.rs"
 [dependencies]
 clap = { version = "=4.6.6", features = ["derive"] }
 anyhow = "=1.0.104"
-clap_complete = "=4.5.3"
+clap_complete = "=4.6.9"
 eframe = { version = "0.31", default-features = true, features = ["default_fonts", "glow", "accesskit"] }
 egui = "0.31"
 rfd = "0.15"
